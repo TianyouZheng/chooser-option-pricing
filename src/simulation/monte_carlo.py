@@ -1,6 +1,5 @@
 import numpy as np
-from src.models.black_scholes import BlackScholes
-from src.models.heston_model import HestonModel
+from scipy.stats import norm
 
 class MonteCarloSimulation:
     def __init__(self, model, num_simulations, num_steps):
@@ -9,31 +8,40 @@ class MonteCarloSimulation:
         self.num_steps = num_steps
 
     def run_simulation(self):
-        if isinstance(self.model, BlackScholes):
-            return self._simulate_black_scholes()
-        elif isinstance(self.model, HestonModel):
-            return self._simulate_heston()
+        if hasattr(self.model, 'generate_paths'):
+            return self.model.generate_paths(self.num_simulations, self.num_steps)
         else:
-            raise ValueError("Unsupported model type")
+            raise NotImplementedError("The model doesn't have a generate_paths method")
 
-    def _simulate_black_scholes(self):
-        dt = self.model.T / self.num_steps
-        sqrt_dt = np.sqrt(dt)
+    def price_european_option(self, K, option_type):
+        S = self.run_simulation()
         
-        S = np.zeros((self.num_simulations, self.num_steps + 1))
-        S[:, 0] = self.model.S
+        # If S is a tuple (as returned by HestonModel), take only the first element
+        if isinstance(S, tuple):
+            S = S[0]
         
-        for i in range(1, self.num_steps + 1):
-            Z = np.random.normal(0, 1, self.num_simulations)
-            S[:, i] = S[:, i-1] * np.exp((self.model.r - 0.5 * self.model.sigma**2) * dt + self.model.sigma * sqrt_dt * Z)
+        # Ensure S is a numpy array
+        S = np.array(S)
         
-        return S
-
-    def _simulate_heston(self):
-        return self.model.generate_paths(self.num_simulations, self.num_steps)
+        if option_type.lower() == 'call':
+            payoffs = np.maximum(S[:, -1] - K, 0)
+        elif option_type.lower() == 'put':
+            payoffs = np.maximum(K - S[:, -1], 0)
+        else:
+            raise ValueError("Option type must be 'call' or 'put'")
+        
+        option_price = np.exp(-self.model.r * self.model.T) * np.mean(payoffs)
+        return option_price
 
     def price_chooser_option(self, K, t_choose):
         S = self.run_simulation()
+        
+        # If S is a tuple (as returned by HestonModel), take only the first element
+        if isinstance(S, tuple):
+            S = S[0]
+        
+        # Ensure S is a numpy array
+        S = np.array(S)
         
         choose_index = int(t_choose / self.model.T * self.num_steps)
         remaining_time = self.model.T - t_choose

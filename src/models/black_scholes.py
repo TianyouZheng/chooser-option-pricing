@@ -1,6 +1,9 @@
 import numpy as np
 from scipy.stats import norm
 
+import numpy as np
+from scipy.stats import norm
+
 class BlackScholes:
     def __init__(self, S, K, T, r, sigma):
         self.S = S  # Current stock price
@@ -22,13 +25,23 @@ class BlackScholes:
         return self.K * np.exp(-self.r * self.T) * norm.cdf(-self.d2()) - self.S * norm.cdf(-self.d1())
 
     def chooser_option_price(self, t_choose):
-        # Time to choose for the chooser option
         tau = self.T - t_choose
-        
         d1_tau = (np.log(self.S / self.K) + (self.r + 0.5 * self.sigma ** 2) * tau) / (self.sigma * np.sqrt(tau))
         d2_tau = d1_tau - self.sigma * np.sqrt(tau)
-        
         call_value = self.S * norm.cdf(d1_tau) - self.K * np.exp(-self.r * tau) * norm.cdf(d2_tau)
         put_value = self.K * np.exp(-self.r * tau) * norm.cdf(-d2_tau) - self.S * norm.cdf(-d1_tau)
-        
         return np.maximum(call_value, put_value)
+
+    def generate_paths(self, num_paths, num_steps):
+        dt = self.T / num_steps
+        nudt = (self.r - 0.5 * self.sigma**2) * dt
+        sigdt = self.sigma * np.sqrt(dt)
+        
+        S = np.zeros((num_paths, num_steps + 1))
+        S[:, 0] = self.S
+        
+        for t in range(1, num_steps + 1):
+            z = np.random.standard_normal(num_paths)
+            S[:, t] = S[:, t-1] * np.exp(nudt + sigdt * z)
+        
+        return S

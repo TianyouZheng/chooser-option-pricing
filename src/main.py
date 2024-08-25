@@ -1,96 +1,118 @@
 import numpy as np
 import pandas as pd
+from src.utils.data_utils import fetch_stock_data, calculate_returns, calculate_historical_volatility, get_option_data, check_put_call_parity, recalibrate_models, LocalVolatilityBS
+from src.evaluation.model_evaluation import calculate_implied_volatility, calculate_mse, calculate_mae, calculate_mape
+from src.utils.visualization_utils import plot_stock_price_and_volatility, plot_option_prices_comparison
 from src.models.black_scholes import BlackScholes
 from src.models.heston_model import HestonModel
-from src.simulation.monte_carlo import MonteCarloSimulation
-from src.utils.data_utils import fetch_stock_data, calculate_returns, calculate_historical_volatility, calibrate_heston_model, get_option_data
-from src.evaluation.model_evaluation import calculate_implied_volatility, calculate_mse, calculate_mae, calculate_mape
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
+from tqdm import tqdm
+
+def price_option(args):
+    K, market_call, market_put, S0, r, T, bs_model, heston_model = args
+    
+    bs = bs_model(K)  # Get Black-Scholes model with local volatility
+    bs_call_price = bs.call_price()
+    bs_put_price = bs.put_price()
+    
+    heston_call_price = heston_model.price_european_option(K, 'call', 5000, 100)
+    heston_put_price = heston_model.price_european_option(K, 'put', 5000, 100)
+    
+    call_iv = calculate_implied_volatility(market_call, S0, K, T, r, 'call')
+    put_iv = calculate_implied_volatility(market_put, S0, K, T, r, 'put')
+    
+    parity_violation = check_put_call_parity(S0, K, r, T, market_call, market_put)
+    
+    return {
+        'Strike': K,
+        'Market Call': market_call,
+        'Market Put': market_put,
+        'BS Call': bs_call_price,
+        'BS Put': bs_put_price,
+        'Heston Call': heston_call_price,
+        'Heston Put': heston_put_price,
+        'Call IV': call_iv,
+        'Put IV': put_iv,
+        'Parity Violation': parity_violation
+    }
 
 def main():
-    # Fetch Tesla stock data
+    print("Fetching stock data...")
     start_date = '2022-01-01'
     end_date = '2023-12-31'
     tesla_data = fetch_stock_data('TSLA', start_date, end_date)
     
-    # Calculate returns and historical volatility
+    print("Calculating returns and volatility...")
     returns = calculate_returns(tesla_data['Close'])
     hist_volatility = calculate_historical_volatility(returns)
     
-    # Set parameters
-    S0 = tesla_data['Close'].iloc[-1]  # Current stock price (TSLA)
-    K = S0  # At-the-money strike price
-    T = 1  # Time to maturity (in years)
-    r = 0.05  # Risk-free rate (you may want to use actual treasury yields)
-    sigma = hist_volatility.iloc[-1]  # Use the most recent historical volatility
-    t_choose = 0.5  # Time to choose for the chooser option
-
-    # Calibrate Heston model
-    initial_params = [2, 0.04, 0.3, -0.7, hist_volatility.iloc[-1]**2]
-    kappa, theta, sigma_v, rho, V0 = calibrate_heston_model(returns, initial_params)
-
-    # Simulation parameters
-    num_simulations = 100000
-    num_steps = 252  # Daily steps for a year
-
-    # Black-Scholes model
-    bs_model = BlackScholes(S0, K, T, r, sigma)
-    bs_chooser_price = bs_model.chooser_option_price(t_choose)
-    print(f"Black-Scholes Chooser Option Price: {bs_chooser_price:.4f}")
-
-    # Monte Carlo simulation with Black-Scholes model
-    mc_bs = MonteCarloSimulation(bs_model, num_simulations, num_steps)
-    mc_bs_price = mc_bs.price_chooser_option(K, t_choose)
-    print(f"Monte Carlo Black-Scholes Chooser Option Price: {mc_bs_price:.4f}")
-
-    # Heston model
-    heston_model = HestonModel(S0, V0, kappa, theta, sigma_v, rho, r, T)
+    plot_stock_price_and_volatility(tesla_data, hist_volatility)
     
-    # Monte Carlo simulation with Heston model
-    mc_heston = MonteCarloSimulation(heston_model, num_simulations, num_steps)
-    mc_heston_price = mc_heston.price_chooser_option(K, t_choose)
-    print(f"Monte Carlo Heston Chooser Option Price: {mc_heston_price:.4f}")
+    S0 = tesla_data['Close'].iloc[-1]
+    r = 0.05  # Risk-free rate (you may want to fetch this dynamically)
+    print(f"Using risk-free rate: {r:.4f}")
 
-    # Fetch actual option data (note: chooser options are not commonly traded, so we'll use regular options for comparison)
-    calls, puts = get_option_data('TSLA', tesla_data.index[-1].strftime('%Y-%m-%d'))
+    print("Fetching option data...")
+    current_date = tesla_data.index[-1].strftime('%Y-%m-%d')
+    print(f"\nFetching option data for date: {current_date}")
+    calls, puts, T = get_option_data('TSLA', current_date)
     
-    # Find the closest strike price to our K
-    closest_call = calls.iloc[(calls['strike'] - K).abs().argsort()[:1]]
-    closest_put = puts.iloc[(puts['strike'] - K).abs().argsort()[:1]]
+    strike_range = calls[(calls['strike'] >= 0.8*S0) & (calls['strike'] <= 1.2*S0)]
+    
+    results = []
+    for _, option in strike_range.iterrows():
+        K = option['strike']
+        market_call_price = option['lastPrice']
+        market_put_price = puts[puts['strike'] == K]['lastPrice'].values[0]
+        
+        results.append({
+            'Strike': K,
+            'Market Call': market_call_price,
+            'Market Put': market_put_price,
+        })
+    
+    results_df = pd.DataFrame(results)
+    
+    print("Recalibrating models...")
+    try:
+        bs_model, heston_model = recalibrate_models(results_df, S0, r, T)
+    except Exception as e:
+        print(f"Error during model recalibration: {e}")
+        print("Falling back to default model parameters.")
+        default_vol = 0.3
+        bs_model = LocalVolatilityBS(S0, T, r, results_df['Strike'].values, [default_vol] * len(results_df))
+        heston_model = HestonModel(S0, 0.04, 2, 0.04, 0.3, -0.7, r, T)  # Using default Heston parameters
 
-    # Calculate implied volatilities
-    call_iv = calculate_implied_volatility(closest_call['lastPrice'].values[0], S0, closest_call['strike'].values[0], T, r, 'call')
-    put_iv = calculate_implied_volatility(closest_put['lastPrice'].values[0], S0, closest_put['strike'].values[0], T, r, 'put')
-
-    print(f"Implied Volatility (Call): {call_iv:.4f}")
-    print(f"Implied Volatility (Put): {put_iv:.4f}")
-
-    # Compare model prices with market prices
-    market_call_price = closest_call['lastPrice'].values[0]
-    market_put_price = closest_put['lastPrice'].values[0]
-
-    bs_call_price = bs_model.call_price()
-    bs_put_price = bs_model.put_price()
-
-    heston_call_price = heston_model.price_european_option(K, 'call', num_simulations, num_steps)
-    heston_put_price = heston_model.price_european_option(K, 'put', num_simulations, num_steps)
-
-    # Calculate error metrics
-    models = ['Black-Scholes', 'Heston']
-    call_prices = [bs_call_price, heston_call_price]
-    put_prices = [bs_put_price, heston_put_price]
-
-    for model, call_price, put_price in zip(models, call_prices, put_prices):
+    args_list = [(row['Strike'], row['Market Call'], row['Market Put'], S0, r, T, bs_model, heston_model) 
+                 for _, row in results_df.iterrows()]
+    
+    print("Pricing options...")
+    with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+        results = list(tqdm(executor.map(price_option, args_list), total=len(args_list), desc="Pricing Options"))
+    
+    results_df = pd.DataFrame(results)
+    
+    print("\nResults:")
+    print(results_df)
+    
+    print("Plotting option prices comparison...")
+    plot_option_prices_comparison(results_df)
+    
+    print("Calculating error metrics...")
+    for model in ['BS', 'Heston']:
+        call_mse = calculate_mse(results_df[f'{model} Call'], results_df['Market Call'])
+        put_mse = calculate_mse(results_df[f'{model} Put'], results_df['Market Put'])
+        call_mae = calculate_mae(results_df[f'{model} Call'], results_df['Market Call'])
+        put_mae = calculate_mae(results_df[f'{model} Put'], results_df['Market Put'])
+        
         print(f"\n{model} Model Evaluation:")
-        print(f"Call Price - Model: {call_price:.4f}, Market: {market_call_price:.4f}")
-        print(f"Put Price - Model: {put_price:.4f}, Market: {market_put_price:.4f}")
-        
-        mse = calculate_mse(np.array([call_price, put_price]), np.array([market_call_price, market_put_price]))
-        mae = calculate_mae(np.array([call_price, put_price]), np.array([market_call_price, market_put_price]))
-        mape = calculate_mape(np.array([call_price, put_price]), np.array([market_call_price, market_put_price]))
-        
-        print(f"MSE: {mse:.6f}")
-        print(f"MAE: {mae:.6f}")
-        print(f"MAPE: {mape:.2f}%")
+        print(f"Call MSE: {call_mse:.6f}")
+        print(f"Put MSE: {put_mse:.6f}")
+        print(f"Call MAE: {call_mae:.6f}")
+        print(f"Put MAE: {put_mae:.6f}")
+
+    print("\nProgram completed successfully!")
 
 if __name__ == "__main__":
     main()

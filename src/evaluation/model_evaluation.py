@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.stats import norm
+from scipy.optimize import minimize_scalar
 
 def calculate_implied_volatility(market_price, S, K, T, r, option_type='call'):
     def option_price(sigma):
