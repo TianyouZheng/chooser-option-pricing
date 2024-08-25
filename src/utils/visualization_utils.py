@@ -106,3 +106,18 @@ def plot_option_prices_comparison(results_df):
     
     plt.savefig('implied_volatility_smile.png')
     plt.close()
+
+def plot_chooser_option_comparison(chooser_df):
+    plt.figure(figsize=(12, 8))
+    plt.plot(chooser_df['Strike'], chooser_df['Real-World Chooser'], 'ro-', label='Simulated Real-World')
+    plt.plot(chooser_df['Strike'], chooser_df['BS Chooser'], 'b--', label='Black-Scholes')
+    plt.plot(chooser_df['Strike'], chooser_df['Heston Chooser'], 'g:', label='Heston')
+    
+    plt.xlabel('Strike Price')
+    plt.ylabel('Chooser Option Price')
+    plt.title('Comparison of Chooser Option Prices')
+    plt.legend()
+    plt.grid(True)
+    
+    plt.savefig('chooser_option_comparison.png')
+    plt.close()

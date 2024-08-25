@@ -1,16 +1,27 @@
 import numpy as np
 from scipy.stats import norm
+from scipy.optimize import minimize
+from scipy.interpolate import interp1d
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
 
-import numpy as np
-from scipy.stats import norm
+class LocalVolatilityBS:
+    def __init__(self, S0, T, r, strikes, local_vols):
+        self.S0 = S0
+        self.T = T
+        self.r = r
+        self.vol_interpolator = interp1d(strikes, local_vols, kind='cubic', fill_value='extrapolate')
+
+    def __call__(self, K):
+        return BlackScholes(self.S0, K, self.T, self.r, self.vol_interpolator(K))
 
 class BlackScholes:
     def __init__(self, S, K, T, r, sigma):
-        self.S = S  # Current stock price
-        self.K = K  # Strike price
-        self.T = T  # Time to maturity
-        self.r = r  # Risk-free rate
-        self.sigma = sigma  # Volatility
+        self.S = S
+        self.K = K
+        self.T = T
+        self.r = r
+        self.sigma = sigma
 
     def d1(self):
         return (np.log(self.S / self.K) + (self.r + 0.5 * self.sigma ** 2) * self.T) / (self.sigma * np.sqrt(self.T))
@@ -32,16 +43,22 @@ class BlackScholes:
         put_value = self.K * np.exp(-self.r * tau) * norm.cdf(-d2_tau) - self.S * norm.cdf(-d1_tau)
         return np.maximum(call_value, put_value)
 
-    def generate_paths(self, num_paths, num_steps):
-        dt = self.T / num_steps
-        nudt = (self.r - 0.5 * self.sigma**2) * dt
-        sigdt = self.sigma * np.sqrt(dt)
-        
-        S = np.zeros((num_paths, num_steps + 1))
-        S[:, 0] = self.S
-        
-        for t in range(1, num_steps + 1):
-            z = np.random.standard_normal(num_paths)
-            S[:, t] = S[:, t-1] * np.exp(nudt + sigdt * z)
-        
-        return S
+def calibrate_single_option(args):
+    S0, K, T, r, market_price = args
+    def objective(sigma):
+        bs = BlackScholes(S0, K, T, r, sigma)
+        model_price = bs.call_price()
+        return (model_price - market_price)**2
+    
+    result = minimize(objective, x0=0.3, method='Nelder-Mead', options={'maxiter': 50})
+    return result.x[0]
+
+def calibrate_local_volatility(market_data, S0, r, T):
+    strikes = market_data['Strike'].values
+    market_prices = market_data['Market Call'].values
+    
+    with ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+        args = [(S0, K, T, r, price) for K, price in zip(strikes, market_prices)]
+        local_vols = list(executor.map(calibrate_single_option, args))
+    
+    return LocalVolatilityBS(S0, T, r, strikes, local_vols)
