@@ -115,7 +115,7 @@ def main():
     plot_stock_price_and_volatility(tesla_data, hist_volatility)
     
     S0 = tesla_data['Close'].iloc[-1]
-    r = get_risk_free_rate()  # Use the new function to get the risk-free rate
+    r = get_risk_free_rate() 
     print(f"Current stock price: {S0:.2f}")
     print(f"Using risk-free rate: {r:.4f}")
     print("Fetching option data...")
@@ -143,7 +143,7 @@ def main():
     bs_model = calibrate_local_volatility(results_df, S0, r, T)
     
     logger.info("Calibrating Heston model...")
-    heston_model = calibrate_heston(results_df, S0, r, T, max_time=300)  # 5 minutes max
+    heston_model = calibrate_heston(results_df, S0, r, T, max_time=300)
 
     args_list = [(row['Strike'], row['Market Call'], row['Market Put'], S0, r, T, bs_model, heston_model) 
                  for _, row in results_df.iterrows()]
@@ -161,7 +161,7 @@ def main():
     plot_option_prices_comparison(results_df)
     
     print("Pricing chooser options...")
-    t_choose = T / 2  # Assume choice time is halfway to expiration
+    t_choose = T / 2 
     chooser_results = []
     
     for _, row in results_df.iterrows():

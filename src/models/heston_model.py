@@ -1,5 +1,3 @@
-# src/models/heston_model.py
-
 import numpy as np
 from scipy.optimize import minimize
 import time
@@ -51,7 +49,6 @@ class HestonModel:
         S = np.full(num_simulations, self.S0)
         V = np.full(num_simulations, self.V0)
         
-        # Simulate up to the choice time
         for _ in range(steps_to_choose):
             Z1 = np.random.normal(0, 1, num_simulations)
             Z2 = self.rho * Z1 + np.sqrt(1 - self.rho**2) * np.random.normal(0, 1, num_simulations)
@@ -59,7 +56,6 @@ class HestonModel:
             S *= np.exp((self.r - 0.5 * V) * dt + np.sqrt(V) * dt * Z1)
             V = np.maximum(V + self.kappa * (self.theta - V) * dt + self.sigma * np.sqrt(V) * dt * Z2, 0)
         
-        # At choice time, calculate call and put option values
         call_values = np.zeros(num_simulations)
         put_values = np.zeros(num_simulations)
         
@@ -73,10 +69,8 @@ class HestonModel:
         call_values = np.maximum(S - K, 0)
         put_values = np.maximum(K - S, 0)
         
-        # Chooser option payoff is the maximum of call and put values
         chooser_payoffs = np.maximum(call_values, put_values)
         
-        # Discount back to present value
         chooser_price = np.exp(-self.r * self.T) * np.mean(chooser_payoffs)
         return chooser_price
     

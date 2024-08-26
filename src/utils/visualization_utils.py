@@ -6,13 +6,11 @@ from scipy.stats import norm
 def plot_stock_price_and_volatility(data, volatility):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
     
-    # Plot stock price
     ax1.plot(data.index, data['Close'], label='Close Price')
     ax1.set_title('TSLA Stock Price')
     ax1.set_ylabel('Price')
     ax1.legend()
     
-    # Plot historical volatility
     ax2.plot(volatility.index, volatility, label='Historical Volatility')
     ax2.set_title('TSLA Historical Volatility')
     ax2.set_xlabel('Date')
@@ -46,7 +44,7 @@ def plot_option_prices_comparison(models, call_prices, put_prices, market_call_p
 
 def plot_monte_carlo_paths(paths, title):
     plt.figure(figsize=(10, 6))
-    plt.plot(paths[:, :100].T)  # Plot first 100 paths for clarity
+    plt.plot(paths[:, :100].T)
     plt.title(title)
     plt.xlabel('Time Steps')
     plt.ylabel('Stock Price')
@@ -94,7 +92,6 @@ def plot_option_prices_comparison(results_df):
     plt.savefig('option_prices_comparison.png')
     plt.close()
 
-    # Plot implied volatilities
     plt.figure(figsize=(12, 6))
     plt.plot(results_df['Strike'], results_df['Call IV'], 'ro-', label='Call IV')
     plt.plot(results_df['Strike'], results_df['Put IV'], 'bo-', label='Put IV')
@@ -120,4 +117,30 @@ def plot_chooser_option_comparison(chooser_df):
     plt.grid(True)
     
     plt.savefig('chooser_option_comparison.png')
+    plt.close()
+
+def plot_pricing_comparison(pricing_results):
+    plt.figure(figsize=(12, 6))
+    plt.scatter(pricing_results['Market Price'], pricing_results['BS Price'], alpha=0.5, label='Black-Scholes')
+    plt.scatter(pricing_results['Market Price'], pricing_results['Heston Price'], alpha=0.5, label='Heston')
+    plt.plot([0, pricing_results['Market Price'].max()], [0, pricing_results['Market Price'].max()], 'r--', label='Perfect Fit')
+    plt.xlabel('Market Price')
+    plt.ylabel('Model Price')
+    plt.title('Model Prices vs Market Prices')
+    plt.legend()
+    plt.savefig('pricing_comparison.png')
+    plt.close()
+
+def plot_error_over_time(pricing_results):
+    pricing_results['BS Error'] = pricing_results['BS Price'] - pricing_results['Market Price']
+    pricing_results['Heston Error'] = pricing_results['Heston Price'] - pricing_results['Market Price']
+    
+    plt.figure(figsize=(12, 6))
+    sns.lineplot(x='Date', y='BS Error', data=pricing_results, label='Black-Scholes Error')
+    sns.lineplot(x='Date', y='Heston Error', data=pricing_results, label='Heston Error')
+    plt.xlabel('Date')
+    plt.ylabel('Pricing Error')
+    plt.title('Model Pricing Errors Over Time')
+    plt.legend()
+    plt.savefig('error_over_time.png')
     plt.close()

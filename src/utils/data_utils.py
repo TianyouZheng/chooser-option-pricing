@@ -74,7 +74,6 @@ def get_option_data(ticker, date):
     calls = options.calls
     puts = options.puts
     
-    # Calculate time to maturity in years
     expiration_date = datetime.strptime(nearest_expiration, '%Y-%m-%d')
     T = (expiration_date - target_date).days / 365.0
     
@@ -105,7 +104,7 @@ def recalibrate_models(market_data, S0, r, T):
     pbar = tqdm(total=100, desc="Heston Calibration")
     last_update = [0]
     start_time = time.time()
-    max_time = 300  # 5 minutes timeout
+    max_time = 300 
 
     def update_progress(xk, convergence):
         nonlocal start_time
@@ -115,7 +114,7 @@ def recalibrate_models(market_data, S0, r, T):
             last_update[0] = current
         
         if time.time() - start_time > max_time:
-            return True  # Stop the optimization if it exceeds the timeout
+            return True 
 
     result = differential_evolution(heston_objective, bounds, maxiter=50, popsize=15, 
                                     callback=update_progress, polish=False, 

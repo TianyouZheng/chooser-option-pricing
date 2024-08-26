@@ -16,11 +16,9 @@ class MonteCarloSimulation:
     def price_european_option(self, K, option_type):
         S = self.run_simulation()
         
-        # If S is a tuple (as returned by HestonModel), take only the first element
         if isinstance(S, tuple):
             S = S[0]
         
-        # Ensure S is a numpy array
         S = np.array(S)
         
         if option_type.lower() == 'call':
@@ -36,11 +34,9 @@ class MonteCarloSimulation:
     def price_chooser_option(self, K, t_choose):
         S = self.run_simulation()
         
-        # If S is a tuple (as returned by HestonModel), take only the first element
         if isinstance(S, tuple):
             S = S[0]
         
-        # Ensure S is a numpy array
         S = np.array(S)
         
         choose_index = int(t_choose / self.model.T * self.num_steps)
